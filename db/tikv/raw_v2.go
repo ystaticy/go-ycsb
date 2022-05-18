@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/magiconair/properties"
 	"github.com/pingcap/go-ycsb/pkg/util"
@@ -168,7 +169,9 @@ func (db *rawV2DB) Insert(ctx context.Context, table string, key string, values 
 		return err
 	}
 
-	return db.db.Put(ctx, db.getRowKey(table, key), buf)
+	currentTime := uint64(time.Now().Unix()) + 600
+	return db.db.PutWithTTL(ctx, db.getRowKey(table, key), buf, currentTime)
+	//return db.db.Put(ctx, db.getRowKey(table, key), buf)
 }
 
 func (db *rawV2DB) BatchInsert(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
