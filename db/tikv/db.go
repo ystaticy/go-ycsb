@@ -42,6 +42,8 @@ func (c tikvCreator) Create(p *properties.Properties) (ycsb.DB, error) {
 	switch tp {
 	case "raw":
 		return createRawDB(p)
+	case "raw_v2":
+		return createRawV2DB(p)
 	case "txn":
 		return createTxnDB(p)
 	default:

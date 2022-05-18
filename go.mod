@@ -38,7 +38,6 @@ require (
 	github.com/tecbot/gorocksdb v0.0.0-20191217155057-f0fad39f321c
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tikv/client-go/v2 v2.0.0-rc.0.20220222033436-79b962a84d18
-	github.com/tikv/pd/client v0.0.0-20220222032342-97a35a18158c // indirect
 	github.com/yuin/gopher-lua v0.0.0-20181031023651-12c4817b42c5 // indirect
 	go.mongodb.org/mongo-driver v1.5.1
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a // indirect
@@ -50,5 +49,7 @@ require (
 )
 
 replace github.com/apache/thrift => github.com/apache/thrift v0.0.0-20171203172758-327ebb6c2b6d
+
+replace github.com/tikv/client-go/v2 => github.com/iosmanthus/client-go/v2 v2.0.0-alpha.0.20220517105730-2d05771a702b
 
 go 1.13
