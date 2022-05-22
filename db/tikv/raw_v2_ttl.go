@@ -17,22 +17,23 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/magiconair/properties"
 	"github.com/pingcap/go-ycsb/pkg/util"
 	"github.com/pingcap/go-ycsb/pkg/ycsb"
 	"github.com/tikv/client-go/v2/config"
 	"github.com/tikv/client-go/v2/rawkv"
-	"go.uber.org/zap"
-	"strings"
 )
 
-type rawV2DB struct {
+type rawV2TTLDB struct {
 	db      *rawkv.Client
 	r       *util.RowCodec
 	bufPool *util.BufPool
 }
 
-func createRawV2DB(p *properties.Properties) (ycsb.DB, error) {
+func createRawV2TTLDB(p *properties.Properties) (ycsb.DB, error) {
 	pdAddr := p.GetString(tikvPD, "127.0.0.1:2379")
 	db, err := rawkv.NewClientV2(context.Background(), strings.Split(pdAddr, ","), config.Security{})
 	if err != nil {
@@ -41,36 +42,35 @@ func createRawV2DB(p *properties.Properties) (ycsb.DB, error) {
 
 	bufPool := util.NewBufPool()
 
-	return &rawV2DB{
+	return &rawV2TTLDB{
 		db:      db,
 		r:       util.NewRowCodec(p),
 		bufPool: bufPool,
 	}, nil
 }
 
-func (db *rawV2DB) Close() error {
+func (db *rawV2TTLDB) Close() error {
 	return db.db.Close()
 }
 
-func (db *rawV2DB) InitThread(ctx context.Context, _ int, _ int) context.Context {
+func (db *rawV2TTLDB) InitThread(ctx context.Context, _ int, _ int) context.Context {
 	return ctx
 }
 
-func (db *rawV2DB) CleanupThread(ctx context.Context) {
+func (db *rawV2TTLDB) CleanupThread(ctx context.Context) {
 }
 
-func (db *rawV2DB) getRowKey(table string, key string) []byte {
+func (db *rawV2TTLDB) getRowKey(table string, key string) []byte {
 	return util.Slice(fmt.Sprintf("%s:%s", table, key))
 }
 
-func (db *rawV2DB) ToSqlDB() *sql.DB {
+func (db *rawV2TTLDB) ToSqlDB() *sql.DB {
 	return nil
 }
 
-func (db *rawV2DB) Read(ctx context.Context, table string, key string, fields []string) (map[string][]byte, error) {
+func (db *rawV2TTLDB) Read(ctx context.Context, table string, key string, fields []string) (map[string][]byte, error) {
 	row, err := db.db.Get(ctx, db.getRowKey(table, key))
 	if err != nil {
-		fmt.Sprintf("[test]Read:%s", zap.Error(err))
 		return nil, err
 	} else if row == nil {
 		return nil, nil
@@ -79,7 +79,7 @@ func (db *rawV2DB) Read(ctx context.Context, table string, key string, fields []
 	return db.r.Decode(row, fields)
 }
 
-func (db *rawV2DB) BatchRead(ctx context.Context, table string, keys []string, fields []string) ([]map[string][]byte, error) {
+func (db *rawV2TTLDB) BatchRead(ctx context.Context, table string, keys []string, fields []string) ([]map[string][]byte, error) {
 	rowKeys := make([][]byte, len(keys))
 	for i, key := range keys {
 		rowKeys[i] = db.getRowKey(table, key)
@@ -100,7 +100,7 @@ func (db *rawV2DB) BatchRead(ctx context.Context, table string, keys []string, f
 	return rowValues, nil
 }
 
-func (db *rawV2DB) Scan(ctx context.Context, table string, startKey string, count int, fields []string) ([]map[string][]byte, error) {
+func (db *rawV2TTLDB) Scan(ctx context.Context, table string, startKey string, count int, fields []string) ([]map[string][]byte, error) {
 	_, rows, err := db.db.Scan(ctx, db.getRowKey(table, startKey), nil, count)
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func (db *rawV2DB) Scan(ctx context.Context, table string, startKey string, coun
 	return res, nil
 }
 
-func (db *rawV2DB) Update(ctx context.Context, table string, key string, values map[string][]byte) error {
+func (db *rawV2TTLDB) Update(ctx context.Context, table string, key string, values map[string][]byte) error {
 	row, err := db.db.Get(ctx, db.getRowKey(table, key))
 	if err != nil {
 		return nil
@@ -142,7 +142,7 @@ func (db *rawV2DB) Update(ctx context.Context, table string, key string, values 
 	return db.Insert(ctx, table, key, data)
 }
 
-func (db *rawV2DB) BatchUpdate(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
+func (db *rawV2TTLDB) BatchUpdate(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
 	var rawKeys [][]byte
 	var rawValues [][]byte
 	for i, key := range keys {
@@ -157,7 +157,7 @@ func (db *rawV2DB) BatchUpdate(ctx context.Context, table string, keys []string,
 	return db.db.BatchPut(ctx, rawKeys, rawValues)
 }
 
-func (db *rawV2DB) Insert(ctx context.Context, table string, key string, values map[string][]byte) error {
+func (db *rawV2TTLDB) Insert(ctx context.Context, table string, key string, values map[string][]byte) error {
 	// Simulate TiDB data
 	buf := db.bufPool.Get()
 	defer func() {
@@ -169,10 +169,11 @@ func (db *rawV2DB) Insert(ctx context.Context, table string, key string, values 
 		return err
 	}
 
-	return db.db.Put(ctx, db.getRowKey(table, key), buf)
+	currentTime := uint64(time.Now().Unix()) + 600
+	return db.db.PutWithTTL(ctx, db.getRowKey(table, key), buf, currentTime)
 }
 
-func (db *rawV2DB) BatchInsert(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
+func (db *rawV2TTLDB) BatchInsert(ctx context.Context, table string, keys []string, values []map[string][]byte) error {
 	var rawKeys [][]byte
 	var rawValues [][]byte
 	for i, key := range keys {
@@ -186,11 +187,11 @@ func (db *rawV2DB) BatchInsert(ctx context.Context, table string, keys []string,
 	return db.db.BatchPut(ctx, rawKeys, rawValues)
 }
 
-func (db *rawV2DB) Delete(ctx context.Context, table string, key string) error {
+func (db *rawV2TTLDB) Delete(ctx context.Context, table string, key string) error {
 	return db.db.Delete(ctx, db.getRowKey(table, key))
 }
 
-func (db *rawV2DB) BatchDelete(ctx context.Context, table string, keys []string) error {
+func (db *rawV2TTLDB) BatchDelete(ctx context.Context, table string, keys []string) error {
 	rowKeys := make([][]byte, len(keys))
 	for i, key := range keys {
 		rowKeys[i] = db.getRowKey(table, key)
